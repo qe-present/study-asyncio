@@ -354,4 +354,84 @@ if __name__ == '__main__':
 __await__。 任何实现__await__方法的东西都可以在await表达式中使用。
 类继承关系如下
 ![](asset/PixPin_2025-05-25_16-11-01.png)
-我们将可在await表达式中使用的对象称为awaitable对象
+ 将可在await表达式中使用的对象称为awaitable对象
+
+# 使用装饰器测量协程执行时间
+
+
+
+## 协程计时装饰器
+
+```python
+import functools
+import time
+from typing import Callable,Any
+def async_timed():
+    """
+    装饰器，用于测量异步函数的执行时间。
+    参数:
+        func: 要装饰的异步函数。
+    返回:
+        包装后的异步函数，执行时会打印开始和结束时间以及耗时。
+    """
+    def wrapper(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
+        async def wrapped(*args, **kwargs) -> Any:
+            print(f'strarting {func} with args: {args}, kwargs: {kwargs}')
+            start_time = time.time()
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                print(f'finished {func} in {elapsed_time:.2f} seconds')
+        return wrapped
+    return wrapper
+```
+
+`Callable[..., Any] `表示“可以被调用的对象”，也就是函数、方法或实现了 __call__ 方法的对象。
+
+`...` 表示参数不限（可以有任意数量和类型的参数）。
+	`Any `表示返回值类型不限。
+	所以，`Callable[..., Any] `用于类型注解，表示“任意参数、任意返回值的可调用对象”。
+
+使用
+
+```python
+import asyncio
+from util import async_timed
+@async_timed()
+async def delay(delay_seconds:int)->int:
+    print(f'sleeping for {delay_seconds} seconds')
+    await asyncio.sleep(delay_seconds)
+    print(f'finished sleeping for {delay_seconds} seconds')
+    return delay_seconds
+@async_timed()
+async def main():
+    task1 = asyncio.create_task(delay(2))
+    task2 = asyncio.create_task(delay(3))
+    await task1
+    await task2
+if __name__ == '__main__':
+    asyncio.run(main())
+"""
+finished sleeping for 2 seconds
+finished <function delay at 0x000001FAD93FBB00> in 2.00 seconds
+finished sleeping for 3 seconds
+finished <function delay at 0x000001FAD93FBB00> in 3.01 seconds
+finished <function main at 0x000001FAD9A4C860> in 3.01 seconds
+"""
+```
+
+可以看到，两个`delay`调用分别在2秒和3秒内开始和结束，总共5描述，
+
+但是主协程只花了3秒完成，等待使用了并发
+
+# 协程和任务的陷阱
+
+
+
+
+
+
+
