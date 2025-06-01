@@ -431,6 +431,181 @@ finished <function main at 0x000001FAD9A4C860> in 3.01 seconds
 
 
 
+尝试将应用程序异化时，会出现两个错误：
+
+1. 第一个是尝试在不适用多处理的情况下，在任务或协程中运行CPU密集型代码
+2. 第二个是使用阻塞I/O密集型API而不使用多线程
+
+
+
+## 尝试运行多个CPU密集型函数
+
+代码如下
+
+```python
+import asyncio
+from util import async_timed
+@async_timed()
+async def cpu_bound_work()->int:
+    counter= 0
+    for i in range(10**8):
+        counter += i
+    return  counter
+@async_timed()
+async def main():
+    task1 = asyncio.create_task(cpu_bound_work())
+    task2 = asyncio.create_task(cpu_bound_work())
+    await task1
+    await task2
+if __name__ == '__main__':
+    asyncio.run(main())
+
+"""
+finished <function cpu_bound_work at 0x000001445859BB00> in 3.12 seconds
+strarting <function cpu_bound_work at 0x000001445859BB00> with args: (), kwargs: {}
+finished <function cpu_bound_work at 0x000001445859BB00> in 2.88 seconds
+finished <function main at 0x0000014458C1C860> in 6.00 seconds
+"""
+```
+
+尽管创建了两个任务，代码任然串行执行。
+
+运行时间是两个任务之和
+
+## 运行阻塞的API
+
+
+
+```python
+import asyncio
+import requests
+from util import async_timed
+@async_timed()
+async def get_example_status()->int:
+    return requests.get('https://example.com').status_code
+
+@async_timed()
+async def main():
+    task1 = asyncio.create_task(get_example_status())
+    task2 = asyncio.create_task(get_example_status())
+    task3= asyncio.create_task(get_example_status())
+    await task1
+    await task2
+    await task3
+if __name__ == '__main__':
+    asyncio.run(main())
+"""
+strarting <function main at 0x000002840ECA9120> with args: (), kwargs: {}
+strarting <function get_example_status at 0x000002840EB07560> with args: (), kwargs: {}
+finished <function get_example_status at 0x000002840EB07560> in 1.13 seconds
+strarting <function get_example_status at 0x000002840EB07560> with args: (), kwargs: {}
+finished <function get_example_status at 0x000002840EB07560> in 1.03 seconds
+strarting <function get_example_status at 0x000002840EB07560> with args: (), kwargs: {}
+finished <function get_example_status at 0x000002840EB07560> in 1.07 seconds
+finished <function main at 0x000002840ECA9120> in 3.23 seconds
+"""
+
+```
+
+ 发现三个任务，每个1秒钟，总共3秒种  
+
+这是因为`requests`是阻塞的，这意味着阻塞它运行的任何线程。由于`asyncio`只有一个线程。
+
+因此，requesrts库会阻止事件循环并行执行任何操作
+
+​	大多数API是阻塞的，且无法和`asynicio`一起使用。需要使用支持协程，并利用非阻塞套接字的库
+
+# 手动创建和访问事件循环
+
+## 手动创建事件循环
+
+可使用`asyncio.new_event_loop`方法创建一个事件循环，返回一个事件循环实例。
+
+有了这个实例，可访问事件循环中的低级方法。
+
+通过事件循环实例可访问一个名为`run_until_complete`的方法，该方法接收一个协程，并运行它直到完成。一旦
+完成了事件循环，需要关闭它，从而释放它正在使用的所有资源。
+
+```python
+import asyncio
+async def main():
+    await asyncio.sleep(1)
+if __name__ == '__main__':
+    loop=asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.close()
+```
+
+## 访问事件循环
+
+```python
+import asyncio
+from util import delay
+def call_later():
+    print("call later")
+async def main():
+    loop=asyncio.get_running_loop()
+    loop.call_soon(call_later)
+    await delay(1)
+    
+if __name__ == '__main__':
+    asyncio.run(main())
+
+```
+
+主协程使用`asyncio.get_running_loop`获取事件循环
+
+并告知运行call_later，它接收一个函数，并将在事件循环的下一次迭代中运行它。此外，有
+一个asyncio.get_event_loop函数可让你访问事件循环。
+
+# 使用调试模式
+
+## 使用`asyncio.run`
+
+`asyncio.run`函数公开了一个调试参数。默认情况下，参数值为False，但我们可将其设置为True以启用调试模式
+
+```python
+    asyncio.run(main(),debug=True)
+```
+
+## 使用命令行参数
+
+启动`Python`应用程序时，可通过传递命令行参数来启用调试模式
+
+```shell
+python -X dev program.py
+```
+
+## 使用环境变量
+
+通过将`PYTHONASYNCIODEBUG`设置为1，从而使用环境变量来启用调试模式。
+
+```
+PYTHONASYNCIODEBUG=1 python3 program.py
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
